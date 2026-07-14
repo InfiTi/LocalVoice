@@ -26,14 +26,15 @@ class AudioPlayer:
         self._lock = threading.Lock()
         self._init_pygame()
 
-    def _init_pygame(self):
+    def _init_pygame(self, frequency: int = 24000):
         """初始化 pygame 音频模块"""
         try:
             import pygame
             pygame.init()
-            pygame.mixer.init(frequency=22050, size=-16, channels=1, buffer=1024)
+            pygame.mixer.init(frequency=frequency, size=-16, channels=1, buffer=1024)
+            self._mixer_freq = frequency
             self._initialized = True
-            logger.info("音频播放器初始化完成 (pygame.mixer)")
+            logger.info(f"音频播放器初始化完成 (pygame.mixer, {frequency}Hz)")
         except Exception as e:
             logger.error(f"pygame 初始化失败: {e}")
             logger.info("如果没有声音，请检查音频设备")
@@ -67,6 +68,19 @@ class AudioPlayer:
 
         import pygame
         try:
+            # 读取 WAV 文件实际采样率
+            import wave
+            with wave.open(wav_path, 'rb') as wf:
+                wav_freq = wf.getframerate()
+            
+            # 如果采样率不匹配，需要重采样
+            if wav_freq != self._mixer_freq:
+                # 重新初始化 mixer 到正确采样率
+                pygame.mixer.quit()
+                pygame.mixer.init(frequency=wav_freq, size=-16, channels=1, buffer=1024)
+                self._mixer_freq = wav_freq
+                logger.debug(f"播放器采样率切换为 {wav_freq}Hz")
+            
             pygame.mixer.music.load(wav_path)
             pygame.mixer.music.set_volume(volume)
             pygame.mixer.music.play()

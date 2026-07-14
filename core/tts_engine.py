@@ -133,8 +133,11 @@ class KokoroTTSEngine(BaseTTSEngine):
         output_path = self._ensure_output_path(output_path)
 
         try:
+            # 注意：不传 lang 参数！
+            # 传 lang="cmn" 会导致 espeak 后端处理中文，音质变差且时长截断
+            # 不传 lang 时 Kokoro 自动检测语言，走正确路径
             samples, sample_rate = self._kokoro.create(
-                text, voice=self._voice, speed=speed, lang="cmn"
+                text, voice=self._voice, speed=speed
             )
 
             # 音量调节
