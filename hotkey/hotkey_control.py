@@ -41,33 +41,40 @@ class HotkeyController:
         # Ctrl+Alt+R: 朗读选中文本
         if 'read_selected' in keys:
             keyboard.add_hotkey(keys['read_selected'], self._on_read_selected)
+            print(f"  [快捷键] {keys['read_selected']} -> 朗读选中文本 ✓")
             logger.info(f"注册快捷键: {keys['read_selected']} → 朗读选中文本")
 
         # Ctrl+Alt+P: 暂停/继续
         if 'pause_resume' in keys:
             keyboard.add_hotkey(keys['pause_resume'], self._on_pause_resume)
+            print(f"  [快捷键] {keys['pause_resume']} -> 暂停/继续 ✓")
             logger.info(f"注册快捷键: {keys['pause_resume']} → 暂停/继续")
 
         # Ctrl+Alt+X: 停止
         if 'stop' in keys:
             keyboard.add_hotkey(keys['stop'], self._on_stop)
+            print(f"  [快捷键] {keys['stop']} -> 停止朗读 ✓")
             logger.info(f"注册快捷键: {keys['stop']} → 停止朗读")
 
         # Ctrl+Alt+S: 开关自动监听（阶段2）
         if 'toggle_auto' in keys:
             keyboard.add_hotkey(keys['toggle_auto'], self._on_toggle_auto)
+            print(f"  [快捷键] {keys['toggle_auto']} -> 开关自动监听 ✓")
             logger.info(f"注册快捷键: {keys['toggle_auto']} → 开关自动监听")
 
         # Ctrl+Alt+↑: 语速加快
         if 'speed_up' in keys:
             keyboard.add_hotkey(keys['speed_up'], self._on_speed_up)
+            print(f"  [快捷键] {keys['speed_up']} -> 语速加快 ✓")
             logger.info(f"注册快捷键: {keys['speed_up']} → 语速加快")
 
         # Ctrl+Alt+↓: 语速减慢
         if 'speed_down' in keys:
             keyboard.add_hotkey(keys['speed_down'], self._on_speed_down)
+            print(f"  [快捷键] {keys['speed_down']} -> 语速减慢 ✓")
             logger.info(f"注册快捷键: {keys['speed_down']} → 语速减慢")
 
+        print("  [快捷键] 全部注册完成，等待操作...")
         logger.info("快捷键注册完成，等待操作...")
         return True
 
@@ -92,15 +99,19 @@ class HotkeyController:
 
         try:
             import keyboard
+            import time as _time
             # 模拟 Ctrl+C 复制选中文本
+            print("  [事件] 模拟 Ctrl+C 复制...", flush=True)
             keyboard.send('ctrl+c', do_press=True, do_release=True)
-            time.sleep(0.1)  # 等待剪贴板更新
+            _time.sleep(0.3)  # 等待剪贴板更新
 
             # 读取新剪贴板内容
             try:
                 text = pyperclip.paste()
             except:
                 text = ""
+
+            print(f"  [事件] 剪贴板内容长度: {len(text) if text else 0}", flush=True)
 
             # 恢复原始剪贴板
             try:
@@ -111,6 +122,7 @@ class HotkeyController:
             return text.strip() if text else ""
 
         except Exception as e:
+            print(f"  [事件] 获取选中文本失败: {e}", flush=True)
             logger.error(f"获取选中文本失败: {e}")
             # 恢复剪贴板
             try:
@@ -121,11 +133,19 @@ class HotkeyController:
 
     def _on_read_selected(self):
         """朗读选中文本"""
-        text = self._get_selected_text()
+        import sys
+        print("\n  [事件] 检测到 Ctrl+Alt+R，正在获取选中文本...", flush=True)
+        try:
+            text = self._get_selected_text()
+        except Exception as e:
+            print(f"  [事件] 获取文本时出错: {e}", flush=True)
+            return
         if text:
+            print(f"  [事件] 获取到文本({len(text)}字): {text[:80]}{'...' if len(text)>80 else ''}", flush=True)
             logger.info(f"触发朗读: {text[:50]}{'...' if len(text)>50 else ''}")
             self.tts_queue.enqueue_text(text)
         else:
+            print("  [事件] 未获取到选中的文本（请先在任意软件中选中文字）", flush=True)
             logger.warning("未获取到选中的文本")
 
     def _on_pause_resume(self):

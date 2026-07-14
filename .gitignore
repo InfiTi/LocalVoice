@@ -9,7 +9,9 @@ build/
 venv/
 .env
 
-# TTS 模型文件（体积大，不纳入版本控制）
+# 大模型文件（体积大，不纳入版本控制）
 models/**/*.onnx
 models/**/*.onnx.json
+models/**/*.bin
 models/**/.cache/
+g2pW/g2pw.onnx

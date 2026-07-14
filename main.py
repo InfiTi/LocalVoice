@@ -122,11 +122,16 @@ def main():
     if config_path_str and not os.path.isabs(config_path_str):
         config_path_str = str(PROJECT_ROOT / config_path_str)
 
+    print("\n  [加载] 正在加载 TTS 模型...")
     engine = create_engine(engine_type, model_path, config_path_str, sample_rate)
     if engine is None:
+        print("  [错误] TTS 引擎创建失败！请检查模型文件和配置")
         logger.error("TTS 引擎创建失败，请检查模型文件和配置")
         logger.info("请下载 Piper 中文模型到 models/piper/ 目录")
         logger.info("下载地址: https://huggingface.co/rhasspy/piper-voices/tree/main/zh/zh_CN/huayan/medium")
+        input("按回车键退出...")
+        return
+    print("  [加载] TTS 模型加载完成 ✓")
 
     # 初始化音频播放器
     player = AudioPlayer()
@@ -157,9 +162,11 @@ def main():
 
     # 初始化快捷键
     hotkeys = dict(config.items('hotkeys')) if config.has_section('hotkeys') else {}
+    print("\n  [快捷键] 正在注册全局快捷键...")
     hotkey_ctrl = HotkeyController(tts_queue, hotkeys)
 
     if not hotkey_ctrl.start():
+        print("  [错误] 快捷键注册失败！请以管理员身份运行")
         logger.error("快捷键注册失败，程序无法正常工作")
         logger.info("请尝试以管理员权限运行")
         input("按回车键退出...")
