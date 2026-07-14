@@ -8,3 +8,8 @@ build/
 .venv/
 venv/
 .env
+
+# TTS 模型文件（体积大，不纳入版本控制）
+models/**/*.onnx
+models/**/*.onnx.json
+models/**/.cache/
