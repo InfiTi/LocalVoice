@@ -73,58 +73,51 @@ class BaseTTSEngine(ABC):
 
 
 class PiperTTSEngine(BaseTTSEngine):
-    """Piper TTS 适配器 — 基于 ONNX 模型"""
+    """Piper TTS 适配器 — 基于 piper-tts 官方库"""
 
     def __init__(self, model_path: str, config_path: str = None, sample_rate: int = 22050):
         super().__init__(model_path, config_path, sample_rate)
-        self._session = None
-        self._config = None
-        self._phonemizer = None
+        self._voice = None
         self._init_engine()
 
     def _init_engine(self):
-        """初始化 Piper ONNX 模型"""
-        try:
-            import onnxruntime as ort
-        except ImportError:
-            logger.error("onnxruntime 未安装，请运行 pip install onnxruntime")
-            return
-
+        """初始化 Piper 语音模型"""
         if not os.path.exists(self.model_path):
             logger.warning(f"Piper 模型文件不存在: {self.model_path}")
             logger.info("请下载 Piper 中文模型并放入 models/piper/ 目录")
             return
 
-        # 加载 ONNX 模型
-        sess_options = ort.SessionOptions()
-        sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        # 确定配置文件路径
+        if not self.config_path or not os.path.exists(self.config_path):
+            base = os.path.splitext(self.model_path)[0]
+            self.config_path = base + ".onnx.json"
+            if not os.path.exists(self.config_path):
+                logger.error(f"Piper 配置文件不存在: {self.config_path}")
+                return
 
-        self._session = ort.InferenceSession(
-            self.model_path,
-            sess_options,
-            providers=['CPUExecutionProvider']
-        )
+        try:
+            from piper import PiperVoice
 
-        # 加载模型配置
-        if self.config_path and os.path.exists(self.config_path):
-            import json
-            with open(self.config_path, 'r', encoding='utf-8') as f:
-                self._config = json.load(f)
-            # 从配置读取采样率
-            if 'audio' in self._config and 'sample_rate' in self._config['audio']:
-                self.sample_rate = self._config['audio']['sample_rate']
+            self._voice = PiperVoice.load(
+                self.model_path,
+                config_path=self.config_path,
+            )
 
-        self._initialized = True
-        logger.info(f"Piper 引擎初始化完成: {self.model_path}")
+            if hasattr(self._voice, 'config') and hasattr(self._voice.config, 'sample_rate'):
+                self.sample_rate = self._voice.config.sample_rate
+
+            self._initialized = True
+            logger.info(f"Piper 引擎初始化完成: {self.model_path} (sample_rate={self.sample_rate})")
+
+        except Exception as e:
+            logger.error(f"Piper 引擎初始化失败: {e}", exc_info=True)
 
     def synthesize(self, text: str, speed: float = 1.0, volume: float = 1.0,
                    output_path: str = None) -> Optional[str]:
         """
-        Piper 合成
-
-        速度控制通过 length_scale 参数实现（Piper 特有）
+        Piper 合成 — 速度控制通过 length_scale 参数实现
         """
-        if not self._initialized or not self._session:
+        if not self._initialized or not self._voice:
             logger.error("Piper 引擎未初始化，无法合成")
             return None
 
@@ -134,81 +127,49 @@ class PiperTTSEngine(BaseTTSEngine):
         output_path = self._ensure_output_path(output_path)
 
         try:
-            audio_data = self._run_inference(text, speed, volume)
-            if audio_data is not None and len(audio_data) > 0:
-                self._save_wav(audio_data, output_path)
-                logger.debug(f"Piper 合成完成: {output_path} ({len(audio_data)} samples)")
-                return output_path
-            else:
-                logger.warning("Piper 合成返回空音频")
-                return None
-        except Exception as e:
-            logger.error(f"Piper 合成失败: {e}", exc_info=True)
-            return None
-
-    def _run_inference(self, text: str, speed: float, volume: float) -> Optional[np.ndarray]:
-        """运行 Piper ONNX 推理"""
-        # Piper 的输入参数名和结构因模型版本而异
-        # 这里实现通用逻辑，后续根据实际模型调整
-
-        try:
-            # 获取模型输入信息
-            input_meta = self._session.get_inputs()
-
-            # 简化处理：使用 espeak-ng 风格的 phonemizer
-            # 实际 Piper 模型需要 piper-phonemize 或 espeak-ng
-            # 这里提供基础实现，后续可安装 piper-tts 包
-
-            # 尝试使用 piper 专用库
-            try:
-                from piper_phonemize import phonemize_espeak
-                # 中文 phonemize
-                phonemes = phonemize_espeak(text, 'cmn')  # cmn = Mandarin Chinese
-            except ImportError:
-                # 回退：直接用文本作为输入（部分 Piper 模型支持）
-                logger.warning("piper-phonemize 未安装，尝试直接文本输入")
-                phonemes = text
+            import wave
+            from piper import SynthesisConfig
 
             # Piper length_scale: >1 放慢, <1 加快
             length_scale = 1.0 / speed if speed > 0 else 1.0
 
-            # 构造输入
-            # 不同 Piper 模型输入名可能不同，这里通用处理
-            input_feed = {}
-            for meta in input_meta:
-                name = meta.name
-                if 'text' in name.lower() or 'phoneme' in name.lower() or 'input' in name.lower():
-                    # 文本/音素输入
-                    if meta.type == 'int64':
-                        # 将文本编码为 ID 序列
-                        input_feed[name] = np.array(
-                            [ord(c) for c in phonemes[:512]], dtype=np.int64
-                        ).reshape(1, -1)
-                    else:
-                        input_feed[name] = np.array(
-                            [list(phonemes[:512])], dtype=meta.type
-                        )
-                elif 'length' in name.lower() or 'scale' in name.lower():
-                    input_feed[name] = np.array([length_scale], dtype=np.float32)
-                elif 'sid' in name.lower() or 'speaker' in name.lower():
-                    input_feed[name] = np.array([0], dtype=np.int64)
+            syn_config = SynthesisConfig(
+                length_scale=length_scale,
+                volume=volume,
+            )
 
-            # 运行推理
-            outputs = self._session.run(None, input_feed)
-            audio_data = outputs[0]
+            # 新版 piper-tts 返回 AudioChunk 迭代器
+            with wave.open(output_path, "wb") as wav_file:
+                wav_file.setnchannels(1)
+                wav_file.setsampwidth(2)  # 16-bit
+                wav_file.setframerate(self.sample_rate)
 
-            # 处理输出
-            audio_data = np.array(audio_data).flatten()
+                for chunk in self._voice.synthesize(text, syn_config=syn_config):
+                    wav_file.writeframes(chunk.audio_int16_bytes)
 
-            # 音量调节
-            if volume != 1.0:
-                audio_data = audio_data * volume
-
-            return audio_data
+            logger.debug(f"Piper 合成完成: {output_path}")
+            return output_path
 
         except Exception as e:
-            logger.error(f"Piper 推理过程出错: {e}", exc_info=True)
+            logger.error(f"Piper 合成失败: {e}", exc_info=True)
             return None
+
+    def _apply_volume(self, wav_path: str, volume: float):
+        """后处理 WAV 文件调节音量"""
+        try:
+            import wave
+            with wave.open(wav_path, "rb") as wf:
+                params = wf.getparams()
+                frames = wf.readframes(wf.getnframes())
+
+            audio = np.frombuffer(frames, dtype=np.int16).astype(np.float32)
+            audio = (audio * volume).clip(-32768, 32767).astype(np.int16)
+
+            with wave.open(wav_path, "wb") as wf:
+                wf.setparams(params)
+                wf.writeframes(audio.tobytes())
+        except Exception as e:
+            logger.warning(f"音量调节失败: {e}")
 
 
 def create_engine(engine_type: str, model_path: str, config_path: str = None,
